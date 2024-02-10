@@ -3,7 +3,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <UniversalTelegramBot.h>
 #include <time.h>
 #include <secrets.h>
 
@@ -11,7 +10,6 @@
 #define LED_BUILTIN     2
 
 WiFiClientSecure client;
-UniversalTelegramBot bot(TG_TOKEN, client);
 Adafruit_PN532 nfc(-1, &Serial2);
 
 void setup() {
@@ -34,7 +32,6 @@ void setup() {
   // Setup Wi-Fi
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -44,7 +41,6 @@ void setup() {
 
   // Configure time and notify
   configTime(TIMEZONE_OFFSET, 0, "pool.ntp.org");
-  bot.sendMessage(TG_CHAT_ID, "Setup finished!");
 }
 
 String getTimestamp() {
@@ -62,8 +58,7 @@ String getTimestamp() {
 void sendVinylId(String id) {
   HTTPClient http;
   http.begin(ENDPOINT);
-  // TODO: create authorization on the server side
-  // http.addHeader("Authorization", "Token XXXX");
+  http.addHeader("Authorization", "Token " + String(ENDPOINT_TOKEN));
 
   int statusCode = http.POST(id);
   if (statusCode != 200) {
@@ -105,7 +100,6 @@ void loop() {
 
     digitalWrite(LED_BUILTIN, HIGH);
     sendVinylId(uidString);
-    bot.sendMessage(TG_CHAT_ID, timestamp + "\n A new card was scanned: " + uidString);
     delay(1000);
     digitalWrite(LED_BUILTIN, LOW);
   }
