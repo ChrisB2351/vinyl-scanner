@@ -1,10 +1,10 @@
-#include <PN532.h>
-#include <PN532_HSU.h>
+#include <Wire.h>
+#include <Adafruit_PN532.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <time.h>
 #include <UniversalTelegramBot.h>
+#include <time.h>
 #include <secrets.h>
 
 #define TIMEZONE_OFFSET 1 * 3600
@@ -12,9 +12,7 @@
 
 WiFiClientSecure client;
 UniversalTelegramBot bot(TG_TOKEN, client);
-
-PN532_HSU pn532hsu(Serial2);
-PN532 nfc(pn532hsu);
+Adafruit_PN532 nfc(-1, &Serial2);
 
 void setup() {
   Serial.begin(115200);
