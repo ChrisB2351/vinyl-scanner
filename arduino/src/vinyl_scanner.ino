@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <Adafruit_PN532.h>
+#include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -8,12 +9,16 @@
 
 #define TIMEZONE_OFFSET 1 * 3600
 #define LED_BUILTIN     2
+#define PIN_WS2812B 15  // The ESP32 pin GPIO16 connected to WS2812B
+#define NUM_PIXELS 30   // The number of LEDs (pixels) on WS2812B LED strip
 
+Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
 WiFiClientSecure client;
 Adafruit_PN532 nfc(-1, &Serial2);
 
 void setup() {
   Serial.begin(115200);
+  delay(100);
   pinMode(LED_BUILTIN, OUTPUT);
   nfc.begin();
 
@@ -38,6 +43,9 @@ void setup() {
   }
   Serial.println("");
   Serial.println("WiFi connected");
+
+  // Initialize WS2812B strip object (REQUIRED)
+  ws2812b.begin();
 
   // Configure time and notify
   configTime(TIMEZONE_OFFSET, 0, "pool.ntp.org");
@@ -87,10 +95,22 @@ void loop() {
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
   uint8_t uidLength;
+  uint32_t colors[] = {
+    ws2812b.Color(255, 0, 0),    // Red
+    ws2812b.Color(0, 255, 0),    // Green
+    ws2812b.Color(0, 0, 255)     // Blue
+  };
 
   success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength); // Informações do NFC
 
   if (success) {
+    uint8_t random_num = random(0,3);
+    Serial.println(random_num);
+    for (int pixel = 0; pixel < NUM_PIXELS; pixel++) {   // for each pixel
+      ws2812b.setPixelColor(pixel, colors[random_num]);  // it only takes effect if pixels.show() is called
+    }
+    ws2812b.show();  
+
     String timestamp = getTimestamp();
     String uidString = formatUid(uidLength, uid);
 
@@ -102,5 +122,8 @@ void loop() {
     sendVinylId(uidString);
     delay(1000);
     digitalWrite(LED_BUILTIN, LOW);
+
+    ws2812b.clear();  
+    ws2812b.show();  
   }
 }
