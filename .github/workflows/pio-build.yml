@@ -1,0 +1,33 @@
+name: PlatformIO Build
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO Core
+        working-directory: arduino
+        run: pip install --upgrade platformio
+      - name: Make secrets.h
+        working-directory: arduino
+        run: cp ./include/secrets.example.h ./include/secrets.h
+      - name: Build PlatformIO Project
+        working-directory: arduino
+        run: pio run
