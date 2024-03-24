@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -74,5 +75,8 @@ func main() {
 		handler = authMiddleware(mux, secret)
 	}
 
-	http.ListenAndServe(":8080", handler)
+	err = http.ListenAndServe(":8080", handler)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("server execution failed: %s", err)
+	}
 }
