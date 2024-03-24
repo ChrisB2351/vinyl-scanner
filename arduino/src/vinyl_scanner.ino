@@ -1,5 +1,5 @@
-#include <Wire.h>
-#include <Adafruit_PN532.h>
+#include <PN532.h>
+#include <PN532_HSU.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -14,7 +14,8 @@
 
 Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
 WiFiClientSecure client;
-Adafruit_PN532 nfc(-1, &Serial2);
+PN532_HSU pn532hsu(Serial2);
+PN532 nfc(pn532hsu);
 
 void setup() {
   Serial.begin(115200);
