@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -80,7 +81,7 @@ func main() {
 
 		authToken := ctx.String("auth-token")
 		if authToken == "" {
-			log.Print("authorization token not set, http endpoint is unprotected")
+			slog.Warn("authorization token not set, http endpoint is unprotected")
 		} else {
 			handler = authMiddleware(handler, authToken)
 		}
@@ -101,7 +102,7 @@ func main() {
 		go func() {
 			defer wg.Done()
 
-			log.Printf("serving on %s", server.Addr)
+			slog.Info("serving", "address", server.Addr)
 
 			err := server.ListenAndServe()
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -120,7 +121,7 @@ func main() {
 		)
 		<-quit
 
-		log.Printf("Server shutting down...")
+		slog.Info("Server shutting down...")
 		s.sendMessage("Server shutting down...")
 
 		go server.Close()
