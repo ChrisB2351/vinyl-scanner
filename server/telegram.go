@@ -14,50 +14,78 @@ func (s *server) handleClear(ctx tele.Context) error {
 	return nil
 }
 
-func (s *server) handleName(ctx tele.Context) error {
+func (s *server) handleSetName(ctx tele.Context) error {
 	args := ctx.Args()
 	if len(args) < 2 {
-		return ctx.Send("Not enough arguments: /name <id> <name>")
+		return ctx.Send("Wrong arguments: /set_name <id> <name>")
 	}
 
 	id := args[0]
 	name := strings.Join(args[1:], " ")
 
-	albums, err := s.loadAlbums()
-	if err != nil {
-		return err
-	}
-
-	album := Album{}
-	if a, ok := albums[id]; ok {
-		album = a
-	}
-	album.Name = name
-	albums[id] = album
-
-	return s.writeAlbums(albums)
+	return s.updateAlbums(func(albums Albums) (Albums, error) {
+		album := Album{}
+		if a, ok := albums[id]; ok {
+			album = a
+		}
+		album.Name = name
+		albums[id] = album
+		return albums, nil
+	})
 }
 
-func (s *server) handleArtist(ctx tele.Context) error {
+func (s *server) handleSetArtist(ctx tele.Context) error {
 	args := ctx.Args()
 	if len(args) < 2 {
-		return ctx.Send("Not enough arguments: /artist <id> <name>")
+		return ctx.Send("Wrong arguments: /set_artist <id> <name>")
 	}
 
 	id := args[0]
 	artist := strings.Join(args[1:], " ")
 
+	return s.updateAlbums(func(albums Albums) (Albums, error) {
+		album := Album{}
+		if a, ok := albums[id]; ok {
+			album = a
+		}
+		album.Artist = artist
+		albums[id] = album
+		return albums, nil
+	})
+}
+
+func (s *server) handleUpdateID(ctx tele.Context) error {
+	args := ctx.Args()
+	if len(args) != 2 {
+		return ctx.Send("Wrong arguments: /update_id <old_id> <new_id>")
+	}
+
+	oldID := args[0]
+	newID := args[1]
+
+	return s.updateAlbums(func(albums Albums) (Albums, error) {
+		album, ok := albums[oldID]
+		if !ok {
+			return albums, nil
+		}
+
+		album.OldIDs = append(album.OldIDs, oldID)
+		delete(albums, oldID)
+		albums[newID] = album
+		return albums, nil
+	})
+}
+
+func (s *server) handleAlbums(ctx tele.Context) error {
 	albums, err := s.loadAlbums()
 	if err != nil {
 		return err
 	}
 
-	album := Album{}
-	if a, ok := albums[id]; ok {
-		album = a
+	str := ""
+	for _, a := range albums {
+		str += a.String() + "\n"
 	}
-	album.Artist = artist
-	albums[id] = album
 
-	return s.writeAlbums(albums)
+	return ctx.Send(str)
 }

@@ -19,8 +19,17 @@ import (
 type Albums map[string]Album
 
 type Album struct {
-	Name   string `json:"name,omitempty"`
-	Artist string `json:"artist,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Artist string   `json:"artist,omitempty"`
+	OldIDs []string `json:"old_ids,omitempty"`
+}
+
+func (a *Album) String() string {
+	str := `"` + a.Name + `"`
+	if a.Artist != "" {
+		str += ` by ` + a.Artist
+	}
+	return str
 }
 
 type server struct {
@@ -56,10 +65,11 @@ func newServer(tgToken string, tgChatIDs []int64, dataDir string) (*server, erro
 	}
 
 	bot.Use(middleware.Whitelist(tgChatIDs...))
-	bot.Handle("/name", s.handleName)
-	bot.Handle("/artist", s.handleArtist)
+	bot.Handle("/set_name", s.handleSetName)
+	bot.Handle("/set_artist", s.handleSetArtist)
+	bot.Handle("/update_id", s.handleUpdateID)
+	bot.Handle("/albums", s.handleAlbums)
 	bot.Handle("/clear", s.handleClear)
-
 	return s, nil
 }
 
@@ -77,6 +87,15 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go s.handleID(id)
 }
 
+func (s *server) sendMessage(msg string) {
+	for _, id := range s.chatIDs {
+		_, err := s.bot.Send(&tele.Chat{ID: id}, msg)
+		if err != nil {
+			log.Printf("error while sending to telegram: %s", err)
+		}
+	}
+}
+
 func (s *server) handleID(id string) {
 	if s.isLastID(id) {
 		return
@@ -88,16 +107,15 @@ func (s *server) handleID(id string) {
 		return
 	}
 
-	var msg string
 	album, ok := albums[id]
-	if !ok {
-		msg = fmt.Sprintf("Please associate a name with this vinyl using \"/name %s <name>\"", id)
-	} else {
-		msg = fmt.Sprintf("Scanned vinyl \"%s\"", album.Name)
+	if ok {
+		s.sendMessage(fmt.Sprintf("Scanned vinyl \"%s\"", album.Name))
 		go s.logID(id)
+		return
 	}
 
-	s.sendMessage(msg)
+	s.sendMessage("Unknown tag scanned. Please associate the given tag with a name using the following command:")
+	s.sendMessage("/set_name " + id + " <name>")
 }
 
 func (s *server) isLastID(id string) bool {
@@ -131,22 +149,16 @@ func (s *server) logID(id string) {
 	}
 }
 
-func (s *server) sendMessage(msg string) {
-	for _, id := range s.chatIDs {
-		_, err := s.bot.Send(&tele.Chat{ID: id}, msg)
-		if err != nil {
-			log.Printf("error while sending to telegram: %s", err)
-		}
-	}
-}
-
 func (s *server) loadAlbums() (Albums, error) {
 	s.albumsMu.Lock()
 	defer s.albumsMu.Unlock()
 
-	filename := filepath.Join(s.dataDir, "albums.json")
+	return s.unsafeLoadAlbums()
+}
 
-	raw, err := os.ReadFile(filename)
+// unsafeLoadAlbums loads the [Albums] without using a lock.
+func (s *server) unsafeLoadAlbums() (Albums, error) {
+	raw, err := os.ReadFile(s.getAlbumsFilepath())
 	if os.IsNotExist(err) {
 		return Albums{}, nil
 	} else if err != nil {
@@ -162,15 +174,28 @@ func (s *server) loadAlbums() (Albums, error) {
 	return albums, nil
 }
 
-func (s *server) writeAlbums(albums Albums) error {
+func (s *server) updateAlbums(fn func(albums Albums) (Albums, error)) error {
+	s.albumsMu.Lock()
+	defer s.albumsMu.Unlock()
+
+	albums, err := s.unsafeLoadAlbums()
+	if err != nil {
+		return err
+	}
+
+	albums, err = fn(albums)
+	if err != nil {
+		return err
+	}
+
 	raw, err := json.Marshal(albums)
 	if err != nil {
 		return err
 	}
 
-	s.albumsMu.Lock()
-	defer s.albumsMu.Unlock()
+	return os.WriteFile(s.getAlbumsFilepath(), raw, 0666)
+}
 
-	filename := filepath.Join(s.dataDir, "albums.json")
-	return os.WriteFile(filename, raw, 0666)
+func (s *server) getAlbumsFilepath() string {
+	return filepath.Join(s.dataDir, "albums.json")
 }
