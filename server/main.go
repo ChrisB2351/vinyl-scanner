@@ -3,14 +3,16 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
+	"os/signal"
+	"strconv"
+	"sync"
+	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/urfave/cli/v2"
 )
 
 func authMiddleware(next http.Handler, token string) http.Handler {
@@ -24,59 +26,112 @@ func authMiddleware(next http.Handler, token string) http.Handler {
 	})
 }
 
-func sendToTelegram(token, chatID, uid string) {
-	data := url.Values{}
-	data.Set("chat_id", chatID)
-	data.Set("disable_web_page_preview", "true")
-	data.Set("text", fmt.Sprintf("Read %s", uid))
-
-	u, err := url.Parse(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token))
-	if err != nil {
-		slog.Warn("failed to send make telegram url", "error", err)
-		return
-	}
-	u.RawQuery = data.Encode()
-
-	resp, err := http.DefaultClient.Get(u.String())
-	if err != nil {
-		slog.Warn("failed to send request to telegram", "error", err)
-		return
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		slog.Warn("unexpected status code from telegram", "statusCode", resp.StatusCode)
-	}
-}
-
 func main() {
 	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	if os.IsNotExist(err) {
+		log.Printf("no .env file found, skipping")
+	} else if err != nil {
+		log.Fatalf("failed loading .env file: %s", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
+	app := cli.NewApp()
+	app.Name = "vinyl-server"
+	app.Usage = "Vinyl scanner server and storage."
+	app.Flags = []cli.Flag{
+		&cli.IntFlag{
+			Name:    "port",
+			Value:   8080,
+			Usage:   "port to run server on",
+			EnvVars: []string{"VINYL_PORT"},
+		},
+		&cli.StringFlag{
+			Name:     "telegram-token",
+			Usage:    "telegram bot token",
+			EnvVars:  []string{"VINYL_TG_TOKEN"},
+			Required: true,
+		},
+		&cli.Int64SliceFlag{
+			Name:     "telegram-chat-id",
+			Usage:    "telegram bot chat id or comma-separated ids",
+			EnvVars:  []string{"VINYL_TG_CHAT_ID"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "data-directory",
+			Usage:    "data directory where the logs and the vinyl data is stored",
+			EnvVars:  []string{"VINYL_DATA_DIR"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    "auth-token",
+			Usage:   "http server endpoint authentication token",
+			EnvVars: []string{"VINYL_AUTH_TOKEN"},
+		},
+	}
+	app.Action = func(ctx *cli.Context) error {
+		s, err := newServer(ctx.String("telegram-token"), ctx.Int64Slice("telegram-chat-id"), ctx.String("data-directory"))
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return err
 		}
 
-		id := string(body)
-		slog.Info("received new uid", "uid", id)
+		// Make HTTP handler
+		var handler http.Handler
+		handler = s
 
-		sendToTelegram(os.Getenv("TG_TOKEN"), os.Getenv("TG_CHAT_ID"), id)
-		w.WriteHeader(http.StatusOK)
-	})
+		authToken := ctx.String("auth-token")
+		if authToken == "" {
+			log.Print("authorization token not set, http endpoint is unprotected")
+		} else {
+			handler = authMiddleware(handler, authToken)
+		}
 
-	var handler http.Handler = mux
+		// Start HTTP handler.
+		quit := make(chan os.Signal, 2)
+		var wg sync.WaitGroup
+		wg.Add(2)
 
-	if secret := os.Getenv("TOKEN"); secret != "" {
-		handler = authMiddleware(mux, secret)
+		server := &http.Server{Addr: ":" + strconv.Itoa(ctx.Int("port")), Handler: handler}
+
+		// Start bot and server.
+		go func() {
+			defer wg.Done()
+			s.bot.Start()
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			log.Printf("serving on %s", server.Addr)
+
+			err := server.ListenAndServe()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				fmt.Fprintf(os.Stderr, "failed to start server: %s\n", err)
+				quit <- os.Interrupt
+			}
+		}()
+
+		s.sendMessage("Server is on and ready.")
+
+		signal.Notify(
+			quit,
+			syscall.SIGINT,
+			syscall.SIGTERM,
+			syscall.SIGHUP,
+		)
+		<-quit
+
+		log.Printf("Server shutting down...")
+		s.sendMessage("Server shutting down...")
+
+		go server.Close()
+		go s.bot.Stop()
+
+		wg.Wait()
+		return nil
 	}
 
-	err = http.ListenAndServe(":8080", handler)
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("server execution failed: %s", err)
+	err = app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

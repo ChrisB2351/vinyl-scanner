@@ -1,0 +1,35 @@
+name: Create and Publish Docker image
+on:
+  push:
+    branches:
+      - main
+env:
+  REGISTRY: ghcr.io
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Log into Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Build and push image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/chrisb2351/vinyl-scanner:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
