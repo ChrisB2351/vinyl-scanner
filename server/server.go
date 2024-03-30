@@ -82,8 +82,6 @@ func (s *server) handleID(id string) {
 		return
 	}
 
-	go s.logID(id)
-
 	albums, err := s.loadAlbums()
 	if err != nil {
 		s.sendMessage(fmt.Sprintf("could not load albums: %s", err))
@@ -96,6 +94,7 @@ func (s *server) handleID(id string) {
 		msg = fmt.Sprintf("Please associate a name with this vinyl using \"/name %s <name>\"", id)
 	} else {
 		msg = fmt.Sprintf("Scanned vinyl \"%s\"", album.Name)
+		go s.logID(id)
 	}
 
 	s.sendMessage(msg)
