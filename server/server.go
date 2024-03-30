@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -91,7 +90,7 @@ func (s *server) sendMessage(msg string) {
 	for _, id := range s.chatIDs {
 		_, err := s.bot.Send(&tele.Chat{ID: id}, msg)
 		if err != nil {
-			log.Printf("error while sending to telegram: %s", err)
+			slog.Warn("error while sending to telegram", "error", err)
 		}
 	}
 }
@@ -109,7 +108,7 @@ func (s *server) handleID(id string) {
 
 	album, ok := albums[id]
 	if ok {
-		s.sendMessage(fmt.Sprintf("Scanned vinyl \"%s\"", album.Name))
+		s.sendMessage("Scanned vinyl " + album.String())
 		go s.logID(id)
 		return
 	}
@@ -138,13 +137,13 @@ func (s *server) logID(id string) {
 
 	fd, err := os.OpenFile(filepath.Join(s.dataDir, "listens.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		log.Printf("error while opening listens.log: %s", err)
+		slog.Warn("error while opening listens.log", "error", err)
 		return
 	}
 
 	_, err = fd.Write([]byte(entry))
 	if err != nil {
-		log.Printf("error while writing to listens.log: %s", err)
+		slog.Warn("error while writing to listens.log", "error", err)
 		return
 	}
 }
