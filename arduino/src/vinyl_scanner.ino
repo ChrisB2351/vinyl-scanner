@@ -4,7 +4,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <time.h>
 #include <secrets.h>
 
 #define TIMEZONE_OFFSET 1 * 3600
@@ -13,16 +12,26 @@
 #define NUM_PIXELS 30   // The number of LEDs (pixels) on WS2812B LED strip
 
 Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
+unsigned long pixelsInterval=10;  // time to wait
+unsigned long rainbowPreviousMillis=0;
+unsigned long rainbowCyclesPreviousMillis=0;
+int rainbowCycleCycles = 0;
+uint16_t currentPixel = 0;// what pixel are we operating on
+
 WiFiClientSecure client;
 PN532_HSU pn532hsu(Serial2);
 PN532 nfc(pn532hsu);
 
+uint64_t timestamp_millis;
+String prev_uid;
+bool vinyl_present = false;
+bool lights_on = false;
+
 void setup() {
   Serial.begin(115200);
   delay(100);
-  pinMode(LED_BUILTIN, OUTPUT);
-  nfc.begin();
 
+  nfc.begin();
   // Setup PN53x / NFC module
   uint32_t nfcVersion = nfc.getFirmwareVersion();
   if (! nfcVersion) {
@@ -47,21 +56,7 @@ void setup() {
 
   // Initialize WS2812B strip object (REQUIRED)
   ws2812b.begin();
-
-  // Configure time and notify
-  configTime(TIMEZONE_OFFSET, 0, "pool.ntp.org");
-}
-
-String getTimestamp() {
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("failed to obtain time");
-    return String("");
-  }
-
-  char timestamp[20];
-  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  return String(timestamp);
+  timestamp_millis = millis();
 }
 
 void sendVinylId(String id) {
@@ -73,7 +68,6 @@ void sendVinylId(String id) {
   if (statusCode != 200) {
     Serial.printf("HTTP GET to %s failed with status code: %d\n", ENDPOINT, statusCode);
   }
-
   http.end();
 }
 
@@ -92,38 +86,62 @@ String formatUid(uint8_t length, uint8_t uid[]) {
   return str;
 }
 
+// rainbow code from https://github.com/ndsh/neopixel-without-delay/tree/master?tab=readme-ov-file
+void rainbow() {
+  for(uint16_t i = 0; i< ws2812b.numPixels(); i++) {
+      ws2812b.setPixelColor(i, Wheel(((i * 256 / ws2812b.numPixels()) + rainbowCycleCycles) & 255));
+  }
+  ws2812b.show();
+
+  rainbowCycleCycles++;
+  if(rainbowCycleCycles >= 256*5) rainbowCycleCycles = 0;
+}
+
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return ws2812b.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return ws2812b.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return ws2812b.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
 void loop() {
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
   uint8_t uidLength;
-  uint32_t colors[] = {
-    ws2812b.Color(255, 0, 0),    // Red
-    ws2812b.Color(0, 255, 0),    // Green
-    ws2812b.Color(0, 0, 255)     // Blue
-  };
-
   success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength); // Informações do NFC
 
   if (success) {
-    uint8_t random_num = random(0,3);
-    Serial.println(random_num);
-    for (int pixel = 0; pixel < NUM_PIXELS; pixel++) {   // for each pixel
-      ws2812b.setPixelColor(pixel, colors[random_num]);  // it only takes effect if pixels.show() is called
-    }
-    ws2812b.show();  
-
-    String timestamp = getTimestamp();
+    vinyl_present = true;
+    timestamp_millis = millis();
     String uidString = formatUid(uidLength, uid);
 
-    Serial.printf("%s: found an ISO14443A card\n", timestamp.c_str());
-    Serial.printf("\tUID Length: %d bytes\n", uidLength);
-    Serial.printf("\tUID Value: %s\n\n", uidString.c_str());
+    if (prev_uid != uidString){
+      Serial.printf("Found an ISO14443A card\n");
+      Serial.printf("\tUID Length: %d bytes\n", uidLength);
+      Serial.printf("\tUID Value: %s\n\n", uidString.c_str());
+      Serial.printf("\tPrevious value: %s\n\n", prev_uid.c_str());
 
-    digitalWrite(LED_BUILTIN, HIGH);
-    sendVinylId(uidString);
-    delay(1000);
-    digitalWrite(LED_BUILTIN, LOW);
+      sendVinylId(uidString);
+      prev_uid = uidString;
+    }
+  }
 
+  // If vinyl is present keep playing rainbow animation
+  if (vinyl_present){
+    if ((unsigned long)(millis() - rainbowPreviousMillis) >= pixelsInterval) {
+      rainbowPreviousMillis = millis();
+      rainbow();
+    }
+  }
+  // If there is no tag scanned for 500 ms turn off the led strip and reset vinyl_present variable
+  if (millis() - timestamp_millis > 500 && vinyl_present){
+    vinyl_present = false;
     ws2812b.clear();  
     ws2812b.show();  
   }
