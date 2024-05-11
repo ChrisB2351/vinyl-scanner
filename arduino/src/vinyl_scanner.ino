@@ -8,7 +8,7 @@
 
 #define TIMEZONE_OFFSET 1 * 3600
 #define LED_BUILTIN     2
-#define PIN_WS2812B 15  // The ESP32 pin GPIO16 connected to WS2812B
+#define PIN_WS2812B 15  // The ESP32 pin GPIO15 connected to WS2812B
 #define NUM_PIXELS 30   // The number of LEDs (pixels) on WS2812B LED strip
 
 Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
