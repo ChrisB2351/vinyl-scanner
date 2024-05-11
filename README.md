@@ -20,6 +20,8 @@ The shelf was made out of 3mm multiplex wood and the "Playing Now" sign out of a
 - [`docs/shelf.pdf`](./docs/shelf.pdf): ready to print PDF file exported to life-size.
 - [`docs/shelf.dwg`](./docs/shelf.dwg): original file with the schematics and a layer with the dimensions. 
 
+After laser cutting, we would advise to put some light blocking foam on the inside, so that the light does not shine through the thin multiplex. Additionally, some extra holes have to be drilled in the bottom plate and the backplate to make space for the nuts and bolts to keep it all together.
+
 ## Documentation
 
 You can find more documentation in the following files:
