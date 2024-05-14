@@ -16,17 +16,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func authMiddleware(next http.Handler, token string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Token "+token {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 func main() {
 	err := godotenv.Load()
 	if os.IsNotExist(err) {
@@ -70,34 +59,17 @@ func main() {
 		},
 	}
 	app.Action = func(ctx *cli.Context) error {
-		s, err := newServer(ctx.String("telegram-token"), ctx.Int64Slice("telegram-chat-id"), ctx.String("data-directory"))
+		handler, err := newServer(ctx.String("telegram-token"), ctx.Int64Slice("telegram-chat-id"), ctx.String("auth-token"), ctx.String("data-directory"))
 		if err != nil {
 			return err
-		}
-
-		// Make HTTP handler
-		var handler http.Handler
-		handler = s
-
-		authToken := ctx.String("auth-token")
-		if authToken == "" {
-			slog.Warn("authorization token not set, http endpoint is unprotected")
-		} else {
-			handler = authMiddleware(handler, authToken)
 		}
 
 		// Start HTTP handler.
 		quit := make(chan os.Signal, 2)
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(1)
 
 		server := &http.Server{Addr: ":" + strconv.Itoa(ctx.Int("port")), Handler: handler}
-
-		// Start bot and server.
-		go func() {
-			defer wg.Done()
-			s.bot.Start()
-		}()
 
 		go func() {
 			defer wg.Done()
@@ -111,8 +83,6 @@ func main() {
 			}
 		}()
 
-		s.sendMessage("Server is on and ready.")
-
 		signal.Notify(
 			quit,
 			syscall.SIGINT,
@@ -122,10 +92,8 @@ func main() {
 		<-quit
 
 		slog.Info("Server shutting down...")
-		s.sendMessage("Server shutting down...")
 
 		go server.Close()
-		go s.bot.Stop()
 
 		wg.Wait()
 		return nil

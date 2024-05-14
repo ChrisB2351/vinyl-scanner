@@ -1,200 +1,471 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	tele "gopkg.in/telebot.v3"
-	"gopkg.in/telebot.v3/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
-type Albums map[string]Album
-
-type Album struct {
-	Name   string   `json:"name,omitempty"`
-	Artist string   `json:"artist,omitempty"`
-	OldIDs []string `json:"old_ids,omitempty"`
-}
-
-func (a *Album) String() string {
-	str := `"` + a.Name + `"`
-	if a.Artist != "" {
-		str += ` by ` + a.Artist
-	}
-	return str
-}
-
 type server struct {
-	bot      *tele.Bot
-	chatIDs  []int64
-	dataDir  string
-	logMu    sync.Mutex
-	albumsMu sync.Mutex
-	lastMu   sync.Mutex
-	lastID   string
+	mux *chi.Mux
+	db  *database
+
+	tgToken   string
+	tgChatIDs []string
+
+	tagMu sync.Mutex
+	tag   string
 }
 
-func newServer(tgToken string, tgChatIDs []int64, dataDir string) (*server, error) {
-	err := os.MkdirAll(dataDir, 0666)
+func newServer(tgToken string, tgChatIDs []int64, apiToken string, dataDir string) (*server, error) {
+	err := os.MkdirAll(dataDir, 0777)
 	if err != nil {
 		return nil, err
 	}
 
-	pref := tele.Settings{
-		Token:  tgToken,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-	}
-
-	bot, err := tele.NewBot(pref)
+	db, err := newDatabase(filepath.Join(dataDir, "data.db"))
 	if err != nil {
 		return nil, err
 	}
 
 	s := &server{
-		chatIDs: tgChatIDs,
-		bot:     bot,
-		dataDir: dataDir,
+		mux:     chi.NewRouter(),
+		db:      db,
+		tgToken: tgToken,
+	}
+	for _, chatID := range tgChatIDs {
+		s.tgChatIDs = append(s.tgChatIDs, strconv.FormatInt(chatID, 10))
 	}
 
-	bot.Use(middleware.Whitelist(tgChatIDs...))
-	bot.Handle("/set_name", s.handleSetName)
-	bot.Handle("/set_artist", s.handleSetArtist)
-	bot.Handle("/update_id", s.handleUpdateID)
-	bot.Handle("/albums", s.handleAlbums)
-	bot.Handle("/clear", s.handleClear)
+	s.mux.Group(func(r chi.Router) {
+		r.Get("/", s.getIndex)
+		r.Get("/albums", s.getAlbums)
+		r.Get("/albums/new", s.getNewAlbum)
+		r.Post("/albums/new", s.postNewAlbum)
+		r.Get("/albums/{album-id}", s.getAlbum)
+		r.Post("/albums/{album-id}", s.postAlbum)
+		r.Get("/albums/{album-id}/delete", s.getDeleteAlbum)
+		r.Post("/albums/{album-id}/delete", s.postDeleteAlbum)
+
+		r.Get("/tags", s.getTags)
+		r.Get("/tags/{tag-id}/connect/{album-id}", s.getTagConnect)
+		r.Post("/tags/{tag-id}/connect/{album-id}", s.postTagConnect)
+		r.Get("/tags/{tag-id}/delete", s.getDeleteTag)
+		r.Post("/tags/{tag-id}/delete", s.postDeleteTag)
+
+		r.Get("/logs", s.getLogs)
+		r.Get("/logs/{ts}/delete", s.getDeleteLog)
+		r.Post("/logs/{ts}/delete", s.postDeleteLog)
+		r.Get("/assets*", http.FileServer(http.FS(assetsFS)).ServeHTTP)
+	})
+
+	s.mux.Group(func(r chi.Router) {
+		if apiToken == "" {
+			slog.Warn("authorization token not set, api endpoint is unprotected")
+		} else {
+			r.Use(authMiddleware(apiToken))
+		}
+		r.Post("/api/tag", s.postApiUpdate)
+	})
+
 	return s, nil
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *server) getIndex(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/albums", http.StatusTemporaryRedirect)
+}
+
+func (s *server) getAlbums(w http.ResponseWriter, r *http.Request) {
+	var (
+		tag string
+	)
+
+	s.tagMu.Lock()
+	tag = s.tag
+	s.tagMu.Unlock()
+
+	albums, err := s.db.GetAlbums(r.Context())
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "albums.html", map[string]interface{}{
+		"Title":  "Albums",
+		"Albums": albums,
+		"Tag":    tag,
+	})
+}
+
+func (s *server) getNewAlbum(w http.ResponseWriter, r *http.Request) {
+	s.renderTemplate(w, http.StatusOK, "album.html", map[string]interface{}{
+		"Title": "New Album",
+		"Album": &Album{},
+	})
+}
+
+func (s *server) postNewAlbum(w http.ResponseWriter, r *http.Request) {
+	s.createOrUpdateAlbum(w, r, nil)
+}
+
+func (s *server) getAlbum(w http.ResponseWriter, r *http.Request) {
+	id, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	album, err := s.db.GetAlbum(r.Context(), id)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "album.html", map[string]interface{}{
+		"Title": "Update Album",
+		"Album": album,
+	})
+}
+
+func (s *server) postAlbum(w http.ResponseWriter, r *http.Request) {
+	id, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	_, err = s.db.GetAlbum(r.Context(), id)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.createOrUpdateAlbum(w, r, &id)
+}
+
+func (s *server) createOrUpdateAlbum(w http.ResponseWriter, r *http.Request, id *uint64) {
+	err := r.ParseForm()
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	name := strings.TrimSpace(r.Form.Get("name"))
+	artist := strings.TrimSpace(r.Form.Get("artist"))
+
+	if name == "" || artist == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("name or artist n=missing"))
+		return
+	}
+
+	album := &Album{
+		Name:   name,
+		Artist: artist,
+	}
+
+	if id == nil {
+		err = s.db.CreateAlbum(r.Context(), album)
+	} else {
+		album.ID = *id
+		err = s.db.UpdateAlbum(r.Context(), album)
+	}
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	http.Redirect(w, r, "/albums#"+strconv.FormatUint(album.ID, 10), http.StatusSeeOther)
+}
+
+func (s *server) getDeleteAlbum(w http.ResponseWriter, r *http.Request) {
+	id, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	album, err := s.db.GetAlbum(r.Context(), id)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "album-delete.html", map[string]interface{}{
+		"Title": "Delete Album",
+		"Album": album,
+	})
+}
+
+func (s *server) postDeleteAlbum(w http.ResponseWriter, r *http.Request) {
+	id, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	err = s.db.DeleteAlbum(r.Context(), id)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	http.Redirect(w, r, "/albums", http.StatusSeeOther)
+}
+
+func (s *server) getTags(w http.ResponseWriter, r *http.Request) {
+	tags, err := s.db.GetTags(r.Context())
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "tags.html", map[string]interface{}{
+		"Title": "Tags",
+		"Tags":  tags,
+	})
+}
+
+func (s *server) getDeleteTag(w http.ResponseWriter, r *http.Request) {
+	tagID := chi.URLParam(r, "tag-id")
+	if tagID == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("tag id is missing"))
+		return
+	}
+
+	tag, err := s.db.GetTag(r.Context(), tagID)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "tag-delete.html", map[string]interface{}{
+		"Title": "Delete Tag",
+		"Tag":   tag,
+	})
+}
+
+func (s *server) postDeleteTag(w http.ResponseWriter, r *http.Request) {
+	tagID := chi.URLParam(r, "tag-id")
+	if tagID == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("tag id is missing"))
+		return
+	}
+
+	err := s.db.DeleteTag(r.Context(), tagID)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	http.Redirect(w, r, "/tags", http.StatusSeeOther)
+}
+
+func (s *server) getTagConnect(w http.ResponseWriter, r *http.Request) {
+	albumID, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	tag := chi.URLParam(r, "tag-id")
+	if tag == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("tag id is missing"))
+		return
+	}
+
+	album, err := s.db.GetAlbum(r.Context(), albumID)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "tag-connect.html", map[string]interface{}{
+		"Title": "Connect Tag",
+		"Tag":   tag,
+		"Album": album,
+	})
+}
+
+func (s *server) postTagConnect(w http.ResponseWriter, r *http.Request) {
+	albumID, err := extractAlbumID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	tag := chi.URLParam(r, "tag-id")
+	if tag == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("tag id is missing"))
+		return
+	}
+
+	defer func() {
+		s.tagMu.Lock()
+		if tag == s.tag {
+			s.tag = ""
+		}
+		s.tagMu.Unlock()
+	}()
+
+	album, err := s.db.GetAlbum(r.Context(), albumID)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	err = s.db.CreateTag(r.Context(), tag, album)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	http.Redirect(w, r, "/tags#"+tag, http.StatusSeeOther)
+}
+
+func (s *server) getLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := s.db.GetLogs(r.Context())
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "logs.html", map[string]interface{}{
+		"Title": "Logs",
+		"Logs":  logs,
+	})
+}
+
+func (s *server) getDeleteLog(w http.ResponseWriter, r *http.Request) {
+	ts := chi.URLParam(r, "ts")
+	if ts == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("timestamp missing"))
+		return
+	}
+
+	log, err := s.db.GetLog(r.Context(), ts)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.renderTemplate(w, http.StatusOK, "log-delete.html", map[string]interface{}{
+		"Title": "Delete Log Entry",
+		"Log":   log,
+	})
+}
+
+func (s *server) postDeleteLog(w http.ResponseWriter, r *http.Request) {
+	ts := chi.URLParam(r, "ts")
+	if ts == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("timestamp missing"))
+		return
+	}
+
+	err := s.db.DeleteLog(r.Context(), ts)
+	if err != nil {
+		s.renderError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	http.Redirect(w, r, "/logs", http.StatusSeeOther)
+}
+
+func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	id := string(body)
-	slog.Info("received new id", "id", id)
+	tagID := string(body)
+	slog.Info("received new tag", "tag", tagID)
 	w.WriteHeader(http.StatusOK)
 
-	go s.handleID(id)
+	go func() {
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+		defer cancel()
+
+		tag, err := s.db.GetTag(ctx, tagID)
+		if err != nil {
+			if errors.Is(err, errNoItem) {
+				s.tagMu.Lock()
+				s.tag = tagID
+				s.tagMu.Unlock()
+				s.sendToTelegram("Unknown tag scanned. Go to the web interface to connect it.")
+			} else {
+				slog.Error("could not load album", "error", err)
+				s.sendToTelegram(fmt.Sprintf("Could not load albums: %s", err))
+			}
+
+			return
+		}
+
+		s.sendToTelegram("Scanned vinyl " + tag.Album.String())
+		err = s.db.CreateLog(ctx, tag.Album)
+		if err != nil {
+			slog.Error("could not log album", "error", err)
+			s.sendToTelegram(fmt.Sprintf("Could not log album: %s", err))
+		}
+	}()
 }
 
-func (s *server) sendMessage(msg string) {
-	for _, id := range s.chatIDs {
-		_, err := s.bot.Send(&tele.Chat{ID: id}, msg)
+func extractAlbumID(r *http.Request) (uint64, error) {
+	idStr := chi.URLParam(r, "album-id")
+	return strconv.ParseUint(idStr, 10, 64)
+}
+
+func (s *server) sendToTelegram(msg string) {
+	for _, chatID := range s.tgChatIDs {
+		data := url.Values{}
+		data.Set("chat_id", chatID)
+		data.Set("disable_web_page_preview", "true")
+		data.Set("text", msg)
+
+		u, err := url.Parse(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", s.tgToken))
 		if err != nil {
-			slog.Warn("error while sending to telegram", "error", err)
+			slog.Warn("failed to send make telegram url", "error", err)
+			return
+		}
+		u.RawQuery = data.Encode()
+
+		resp, err := http.DefaultClient.Get(u.String())
+		if err != nil {
+			slog.Warn("failed to send request to telegram", "error", err)
+			return
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			slog.Warn("unexpected status code from telegram", "statusCode", resp.StatusCode)
 		}
 	}
 }
 
-func (s *server) handleID(id string) {
-	if s.isLastID(id) {
-		return
+func authMiddleware(token string) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Token "+token {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
 	}
-
-	albums, err := s.loadAlbums()
-	if err != nil {
-		s.sendMessage(fmt.Sprintf("could not load albums: %s", err))
-		return
-	}
-
-	album, ok := albums[id]
-	if ok {
-		s.sendMessage("Scanned vinyl " + album.String())
-		go s.logID(id)
-		return
-	}
-
-	s.sendMessage("Unknown tag scanned. Please associate the given tag with a name using the following command:")
-	s.sendMessage("/set_name " + id + " <name>")
-}
-
-func (s *server) isLastID(id string) bool {
-	s.lastMu.Lock()
-	defer s.lastMu.Unlock()
-
-	if s.lastID == id {
-		return true
-	}
-
-	s.lastID = id
-	return false
-}
-
-func (s *server) logID(id string) {
-	entry := fmt.Sprintf("%s,%s\n", id, time.Now().UTC().Format(time.RFC3339))
-
-	s.logMu.Lock()
-	defer s.logMu.Unlock()
-
-	fd, err := os.OpenFile(filepath.Join(s.dataDir, "listens.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		slog.Warn("error while opening listens.log", "error", err)
-		return
-	}
-
-	_, err = fd.Write([]byte(entry))
-	if err != nil {
-		slog.Warn("error while writing to listens.log", "error", err)
-		return
-	}
-}
-
-func (s *server) loadAlbums() (Albums, error) {
-	s.albumsMu.Lock()
-	defer s.albumsMu.Unlock()
-
-	return s.unsafeLoadAlbums()
-}
-
-// unsafeLoadAlbums loads the [Albums] without using a lock.
-func (s *server) unsafeLoadAlbums() (Albums, error) {
-	raw, err := os.ReadFile(s.getAlbumsFilepath())
-	if os.IsNotExist(err) {
-		return Albums{}, nil
-	} else if err != nil {
-		return nil, err
-	}
-
-	var albums Albums
-	err = json.Unmarshal(raw, &albums)
-	if err != nil {
-		return nil, err
-	}
-
-	return albums, nil
-}
-
-func (s *server) updateAlbums(fn func(albums Albums) (Albums, error)) error {
-	s.albumsMu.Lock()
-	defer s.albumsMu.Unlock()
-
-	albums, err := s.unsafeLoadAlbums()
-	if err != nil {
-		return err
-	}
-
-	albums, err = fn(albums)
-	if err != nil {
-		return err
-	}
-
-	raw, err := json.Marshal(albums)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(s.getAlbumsFilepath(), raw, 0666)
-}
-
-func (s *server) getAlbumsFilepath() string {
-	return filepath.Join(s.dataDir, "albums.json")
 }
