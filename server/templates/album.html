@@ -1,0 +1,13 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "albums" }}
+
+<h2>{{ .Title }}</h2>
+
+<form method='post'>
+  <input required type='text' name='name' placeholder='Name' value='{{ .Album.Name }}'>
+  <input required type='text' name='artist' placeholder='Artist' value='{{ .Album.Artist }}'>
+
+  <button>{{ if .Album.ID }}Update{{ else }}Create{{ end }}</button>
+</form>
+
+{{ template "_footer.html" . }}

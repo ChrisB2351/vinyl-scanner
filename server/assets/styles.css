@@ -1,0 +1,138 @@
+:root {
+  --radius: 5px;
+  --accent: hsl(46.76deg 94.67% 56%);
+  --accent-dark: hsl(46.73deg 94.76% 45%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 95%;
+  max-width: 55rem;
+  margin: 0 auto;
+  background: #fffdf6;
+  font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui,
+    helvetica neue, helvetica, Cantarell, Ubuntu, roboto, noto, arial, sans-serif;
+  font-size: 18px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  margin: 0 0 3rem 0;
+  background: var(--accent);
+  border-radius: 0 0 var(--radius) var(--radius);
+  border: 1px solid var(--accent-dark);
+  border-top: 0;
+  font-weight: bold;
+}
+
+nav > a {
+  padding: 1rem;
+}
+
+nav > a:last-of-type {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+nav > a[aria-current="page"] {
+  background-color: var(--accent-dark);
+}
+
+input,
+select,
+textarea,
+button {
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+  display: block;
+  border: 1px solid var(--accent-dark);
+  border-radius: var(--radius);
+  color: black;
+  outline: 0;
+  min-width: 0;
+}
+
+form input,
+form select,
+form textarea,
+form button {
+  width: 100%;
+}
+
+input,
+select,
+textarea {
+  background: white;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: blue;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: #dddddd;
+  cursor: not-allowed;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  font-weight: bold;
+}
+
+button:hover {
+  background: var(--accent-dark);
+}
+
+.table {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr) max-content;
+  background: white;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--accent-dark);
+  margin: 1rem 0;
+}
+
+.table > div {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--accent-dark);
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: span 3;
+  align-items: center;
+}
+
+.table > div:target {
+  font-style: italic;
+}
+
+.table > div:first-child {
+  font-weight: bold;
+  background: var(--accent);
+}
+
+.table > div:last-child {
+  border-bottom: 0;
+}
+
+.table button {
+  display: inline-block;
+  margin: 0;
+}

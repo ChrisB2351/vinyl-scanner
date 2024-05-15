@@ -1,0 +1,12 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "tags" }}
+
+<h2>{{ .Title }}</h2>
+
+<p>Do you want to connect tag <code>{{ .Tag }}</code> with the album <strong>{{ .Album.String }}</strong>?</p>
+
+<form method='post'>
+  <button>Connect</button>
+</form>
+
+{{ template "_footer.html" . }}

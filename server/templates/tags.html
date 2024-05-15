@@ -1,0 +1,24 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "tags" }}
+
+<h2>{{ .Title }}</h2>
+
+<div class='table'>
+  <div>
+    <div>Tag</div>
+    <div>Album</div>
+    <div></div>
+  </div>
+
+  {{ range .Tags }}
+  <div id="{{ .ID }}">
+    <div>{{ .ID }}</div>
+    <div>{{ .Album.String }}</div>
+    <div>
+      <a href='/tags/{{ .ID }}/delete'><button>❌</button></a>
+    </div>
+  </div>
+  {{ end }}
+</div>
+
+{{ template "_footer.html" . }}
