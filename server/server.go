@@ -53,13 +53,18 @@ func newServer(cfg *config) (*server, error) {
 		return nil, err
 	}
 
+	pwd, err := base64.StdEncoding.DecodeString(cfg.password)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding base64 bcrypt hashed password: %w", err)
+	}
+
 	s := &server{
 		mux:      chi.NewRouter(),
 		db:       db,
 		tgToken:  cfg.tgToken,
 		jwtAuth:  jwtauth.New("HS256", []byte(base64.StdEncoding.EncodeToString([]byte(cfg.jwtSecret))), nil),
 		username: cfg.username,
-		password: cfg.password,
+		password: string(pwd),
 	}
 	for _, chatID := range cfg.tgChatIDs {
 		s.tgChatIDs = append(s.tgChatIDs, strconv.FormatInt(chatID, 10))

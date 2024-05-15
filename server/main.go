@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -70,7 +71,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "login-password",
-			Usage:   "admin interface password hash generated with 'password' subcommand",
+			Usage:   "admin interface base64 hashed password generated with 'password' subcommand",
 			EnvVars: []string{"VINYL_LOGIN_PASSWORD"},
 		},
 	}
@@ -143,7 +144,7 @@ func main() {
 				return err
 			}
 
-			fmt.Println(string(hash))
+			fmt.Println(base64.StdEncoding.EncodeToString(hash))
 			return nil
 		},
 	})
