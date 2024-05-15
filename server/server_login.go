@@ -14,28 +14,23 @@ const (
 	sessionSubject string = "Vinyl Scanner Session"
 )
 
-type loginPage struct {
-	Title string
-	Error string
-}
-
 func (s *server) loginGet(w http.ResponseWriter, r *http.Request) {
 	if s.isLoggedIn(r) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
-	s.renderTemplate(w, http.StatusOK, "login.html", &loginPage{
-		Title: "Login",
+	s.renderTemplate(w, http.StatusOK, "login.html", map[string]any{
+		"Title": "Login",
 	})
 }
 
 func (s *server) loginPost(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
-		s.renderTemplate(w, http.StatusBadRequest, "login.html", &loginPage{
-			Title: "Login",
-			Error: err.Error(),
+		s.renderTemplate(w, http.StatusBadRequest, "login.html", map[string]any{
+			"Title": "Login",
+			"Error": err.Error(),
 		})
 		return
 	}
@@ -45,9 +40,9 @@ func (s *server) loginPost(w http.ResponseWriter, r *http.Request) {
 	correctPassword := bcrypt.CompareHashAndPassword([]byte(s.password), []byte(password)) == nil
 
 	if username != s.username || !correctPassword {
-		s.renderTemplate(w, http.StatusUnauthorized, "login.html", &loginPage{
-			Title: "Login",
-			Error: "Invalid credentials.",
+		s.renderTemplate(w, http.StatusUnauthorized, "login.html", map[string]any{
+			"Title": "Login",
+			"Error": "Invalid credentials.",
 		})
 		return
 	}
@@ -60,9 +55,9 @@ func (s *server) loginPost(w http.ResponseWriter, r *http.Request) {
 		jwt.ExpirationKey: expiration,
 	})
 	if err != nil {
-		s.renderTemplate(w, http.StatusInternalServerError, "login.html", &loginPage{
-			Title: "Login",
-			Error: err.Error(),
+		s.renderTemplate(w, http.StatusInternalServerError, "login.html", map[string]any{
+			"Title": "Login",
+			"Error": err.Error(),
 		})
 		return
 	}

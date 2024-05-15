@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,6 +28,10 @@ func (s *server) renderTemplate(w http.ResponseWriter, code int, template string
 }
 
 func (s *server) renderError(w http.ResponseWriter, code int, reqErr error) {
+	if errors.Is(reqErr, errNoItem) {
+		code = http.StatusNotFound
+	}
+
 	data := map[string]interface{}{
 		"Title":  fmt.Sprintf("%d %s", code, http.StatusText(code)),
 		"Status": code,
