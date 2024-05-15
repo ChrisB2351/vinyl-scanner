@@ -14,6 +14,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -53,13 +54,38 @@ func main() {
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:    "auth-token",
-			Usage:   "http server endpoint authentication token",
-			EnvVars: []string{"VINYL_AUTH_TOKEN"},
+			Name:    "api-token",
+			Usage:   "api endpoint authentication token",
+			EnvVars: []string{"VINYL_API_TOKEN"},
+		},
+		&cli.StringFlag{
+			Name:    "jwt-secret",
+			Usage:   "jwt tokens secret",
+			EnvVars: []string{"VINYL_JWT_SECRET"},
+		},
+		&cli.StringFlag{
+			Name:    "login-username",
+			Usage:   "admin interface username",
+			EnvVars: []string{"VINYL_LOGIN_USERNAME"},
+		},
+		&cli.StringFlag{
+			Name:    "login-password",
+			Usage:   "admin interface password hash generated with 'password' subcommand",
+			EnvVars: []string{"VINYL_LOGIN_PASSWORD"},
 		},
 	}
 	app.Action = func(ctx *cli.Context) error {
-		handler, err := newServer(ctx.String("telegram-token"), ctx.Int64Slice("telegram-chat-id"), ctx.String("auth-token"), ctx.String("data-directory"))
+		cfg := &config{
+			tgToken:   ctx.String("telegram-token"),
+			tgChatIDs: ctx.Int64Slice("telegram-chat-id"),
+			apiToken:  ctx.String("api-token"),
+			dataDir:   ctx.String("data-directory"),
+			jwtSecret: ctx.String("jwt-secret"),
+			username:  ctx.String("login-username"),
+			password:  ctx.String("login-password"),
+		}
+
+		handler, err := newServer(cfg)
 		if err != nil {
 			return err
 		}
@@ -98,6 +124,29 @@ func main() {
 		wg.Wait()
 		return nil
 	}
+
+	app.Commands = append(app.Commands, &cli.Command{
+		Name:      "password",
+		Usage:     "Generate a password hash to use on the configuration",
+		Args:      true,
+		ArgsUsage: "[password]",
+		Before: func(ctx *cli.Context) error {
+			if ctx.NArg() != 1 {
+				return errors.New("this command must have one and only one argument")
+			}
+			return nil
+		},
+		Action: func(ctx *cli.Context) error {
+			pwd := ctx.Args().First()
+			hash, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(string(hash))
+			return nil
+		},
+	})
 
 	err = app.Run(os.Args)
 	if err != nil {

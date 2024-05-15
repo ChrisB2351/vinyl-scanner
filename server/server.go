@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -16,40 +17,67 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
 )
+
+type config struct {
+	tgToken   string
+	tgChatIDs []int64
+
+	apiToken string
+	dataDir  string
+
+	jwtSecret string
+	username  string
+	password  string
+}
 
 type server struct {
 	mux *chi.Mux
 	db  *database
 
+	tagMu sync.Mutex
+	tag   string
+
 	tgToken   string
 	tgChatIDs []string
 
-	tagMu sync.Mutex
-	tag   string
+	jwtAuth  *jwtauth.JWTAuth
+	username string
+	password string
 }
 
-func newServer(tgToken string, tgChatIDs []int64, apiToken string, dataDir string) (*server, error) {
-	err := os.MkdirAll(dataDir, 0777)
+func newServer(cfg *config) (*server, error) {
+	err := os.MkdirAll(cfg.dataDir, 0777)
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := newDatabase(filepath.Join(dataDir, "data.db"))
+	db, err := newDatabase(filepath.Join(cfg.dataDir, "data.db"))
 	if err != nil {
 		return nil, err
 	}
 
 	s := &server{
-		mux:     chi.NewRouter(),
-		db:      db,
-		tgToken: tgToken,
+		mux:      chi.NewRouter(),
+		db:       db,
+		tgToken:  cfg.tgToken,
+		jwtAuth:  jwtauth.New("HS256", []byte(base64.StdEncoding.EncodeToString([]byte(cfg.jwtSecret))), nil),
+		username: cfg.username,
+		password: cfg.password,
 	}
-	for _, chatID := range tgChatIDs {
+	for _, chatID := range cfg.tgChatIDs {
 		s.tgChatIDs = append(s.tgChatIDs, strconv.FormatInt(chatID, 10))
 	}
 
+	// Build Router
+	s.mux.Use(jwtauth.Verifier(s.jwtAuth))
+	s.mux.Get("/assets*", http.FileServer(http.FS(assetsFS)).ServeHTTP)
+	s.mux.Get("/login", s.loginGet)
+	s.mux.Post("/login", s.loginPost)
+	s.mux.Get("/logout", s.logoutGet)
 	s.mux.Group(func(r chi.Router) {
+		r.Use(s.mustLoggedIn)
 		r.Get("/", s.getIndex)
 		r.Get("/albums", s.getAlbums)
 		r.Get("/albums/new", s.getNewAlbum)
@@ -68,14 +96,12 @@ func newServer(tgToken string, tgChatIDs []int64, apiToken string, dataDir strin
 		r.Get("/logs", s.getLogs)
 		r.Get("/logs/{ts}/delete", s.getDeleteLog)
 		r.Post("/logs/{ts}/delete", s.postDeleteLog)
-		r.Get("/assets*", http.FileServer(http.FS(assetsFS)).ServeHTTP)
 	})
-
 	s.mux.Group(func(r chi.Router) {
-		if apiToken == "" {
+		if cfg.apiToken == "" {
 			slog.Warn("authorization token not set, api endpoint is unprotected")
 		} else {
-			r.Use(authMiddleware(apiToken))
+			r.Use(mustApiToken(cfg.apiToken))
 		}
 		r.Post("/api/tag", s.postApiUpdate)
 	})
@@ -398,7 +424,6 @@ func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	go func() {
-
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 		defer cancel()
 
@@ -457,7 +482,7 @@ func (s *server) sendToTelegram(msg string) {
 	}
 }
 
-func authMiddleware(token string) func(next http.Handler) http.Handler {
+func mustApiToken(token string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("Authorization") != "Token "+token {
