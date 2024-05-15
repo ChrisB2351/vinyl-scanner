@@ -15,7 +15,7 @@
     <div>{{ .ID }}</div>
     <div>{{ .Album.String }}</div>
     <div>
-      <a href='/tags/{{ .ID }}/delete'><button>❌</button></a>
+      <a title='Delete' href='/tags/{{ .ID }}/delete'><button>❌</button></a>
     </div>
   </div>
   {{ end }}

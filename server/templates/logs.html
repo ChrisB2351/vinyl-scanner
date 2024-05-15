@@ -15,7 +15,7 @@
     <div>{{ .Timestamp }}</div>
     <div>{{ .Album }}</div>
     <div>
-      <a href='/logs/{{ .Timestamp }}/delete'><button>❌</button></a>
+      <a title='Delete' href='/logs/{{ .Timestamp }}/delete'><button>❌</button></a>
     </div>
   </div>
   {{ end }}

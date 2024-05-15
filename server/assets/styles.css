@@ -135,4 +135,5 @@ button:hover {
 .table button {
   display: inline-block;
   margin: 0;
+  background: white;
 }
