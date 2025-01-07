@@ -27,7 +27,7 @@ NAME:
    vinyl-server - Vinyl scanner server and storage.
 
 USAGE:
-   vinyl-server [global options] command [command options] 
+   vinyl-server [global options] command [command options]
 
 COMMANDS:
    password  Generate a password hash to use on the configuration
@@ -38,9 +38,10 @@ GLOBAL OPTIONS:
    --telegram-token value                                 telegram bot token [$VINYL_TG_TOKEN]
    --telegram-chat-id value [ --telegram-chat-id value ]  telegram bot chat id or comma-separated ids [$VINYL_TG_CHAT_ID]
    --data-directory value                                 data directory where the logs and the vinyl data is stored [$VINYL_DATA_DIR]
+   --base-url value                                       hostname and path to where the dashboard will be available at [$VINYL_BASE_URL]
    --api-token value                                      api endpoint authentication token [$VINYL_API_TOKEN]
    --jwt-secret value                                     jwt tokens secret [$VINYL_JWT_SECRET]
    --login-username value                                 admin interface username [$VINYL_LOGIN_USERNAME]
-   --login-password value                                 admin interface password hash generated with 'password' subcommand [$VINYL_LOGIN_PASSWORD]
+   --login-password value                                 admin interface base64 hashed password generated with 'password' subcommand [$VINYL_LOGIN_PASSWORD]
    --help, -h                                             show help
 ```

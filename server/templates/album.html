@@ -6,6 +6,7 @@
 <form method='post'>
   <input required type='text' name='name' placeholder='Name' value='{{ .Album.Name }}'>
   <input required type='text' name='artist' placeholder='Artist' value='{{ .Album.Artist }}'>
+  <input required type='text' name='tag' placeholder='Tag' value='{{ .Album.Tag }}'>
 
   <button>{{ if .Album.ID }}Update{{ else }}Create{{ end }}</button>
 </form>

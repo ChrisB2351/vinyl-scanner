@@ -1,10 +1,7 @@
 package main
 
 import (
-	"errors"
 	"net/http"
-
-	"github.com/go-chi/chi/v5"
 )
 
 func (s *server) getLogs(w http.ResponseWriter, r *http.Request) {
@@ -21,13 +18,13 @@ func (s *server) getLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getDeleteLog(w http.ResponseWriter, r *http.Request) {
-	ts := chi.URLParam(r, "ts")
-	if ts == "" {
-		s.renderError(w, http.StatusBadRequest, errors.New("timestamp missing"))
+	id, err := extractID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	log, err := s.db.GetLog(r.Context(), ts)
+	log, err := s.db.GetLog(r.Context(), id)
 	if err != nil {
 		s.renderError(w, http.StatusInternalServerError, err)
 		return
@@ -40,13 +37,13 @@ func (s *server) getDeleteLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) postDeleteLog(w http.ResponseWriter, r *http.Request) {
-	ts := chi.URLParam(r, "ts")
-	if ts == "" {
-		s.renderError(w, http.StatusBadRequest, errors.New("timestamp missing"))
+	id, err := extractID(r)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	err := s.db.DeleteLog(r.Context(), ts)
+	err = s.db.DeleteLog(r.Context(), id)
 	if err != nil {
 		s.renderError(w, http.StatusInternalServerError, err)
 		return

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
@@ -21,6 +20,7 @@ type config struct {
 
 	apiToken string
 	dataDir  string
+	baseURL  string
 
 	jwtSecret string
 	username  string
@@ -28,11 +28,9 @@ type config struct {
 }
 
 type server struct {
-	mux *chi.Mux
-	db  *database
-
-	tagMu sync.Mutex
-	tag   string
+	mux     *chi.Mux
+	db      *database
+	baseURL string
 
 	tgToken   string
 	tgChatIDs []string
@@ -48,7 +46,7 @@ func newServer(cfg *config) (*server, error) {
 		return nil, err
 	}
 
-	db, err := newDatabase(filepath.Join(cfg.dataDir, "data.db"))
+	db, err := newDatabase(filepath.Join(cfg.dataDir, "data.sqlite3"))
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +59,7 @@ func newServer(cfg *config) (*server, error) {
 	s := &server{
 		mux:      chi.NewRouter(),
 		db:       db,
+		baseURL:  cfg.baseURL,
 		tgToken:  cfg.tgToken,
 		jwtAuth:  jwtauth.New("HS256", []byte(base64.StdEncoding.EncodeToString([]byte(cfg.jwtSecret))), nil),
 		username: cfg.username,
@@ -82,20 +81,14 @@ func newServer(cfg *config) (*server, error) {
 		r.Get("/albums", s.getAlbums)
 		r.Get("/albums/new", s.getNewAlbum)
 		r.Post("/albums/new", s.postNewAlbum)
-		r.Get("/albums/{album-id}", s.getAlbum)
-		r.Post("/albums/{album-id}", s.postAlbum)
-		r.Get("/albums/{album-id}/delete", s.getDeleteAlbum)
-		r.Post("/albums/{album-id}/delete", s.postDeleteAlbum)
-
-		r.Get("/tags", s.getTags)
-		r.Get("/tags/{tag-id}/connect/{album-id}", s.getTagConnect)
-		r.Post("/tags/{tag-id}/connect/{album-id}", s.postTagConnect)
-		r.Get("/tags/{tag-id}/delete", s.getDeleteTag)
-		r.Post("/tags/{tag-id}/delete", s.postDeleteTag)
+		r.Get("/albums/{id}", s.getAlbum)
+		r.Post("/albums/{id}", s.postAlbum)
+		r.Get("/albums/{id}/delete", s.getDeleteAlbum)
+		r.Post("/albums/{id}/delete", s.postDeleteAlbum)
 
 		r.Get("/logs", s.getLogs)
-		r.Get("/logs/{ts}/delete", s.getDeleteLog)
-		r.Post("/logs/{ts}/delete", s.postDeleteLog)
+		r.Get("/logs/{id}/delete", s.getDeleteLog)
+		r.Post("/logs/{id}/delete", s.postDeleteLog)
 	})
 	s.mux.Group(func(r chi.Router) {
 		if cfg.apiToken == "" {
