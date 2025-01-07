@@ -11,11 +11,11 @@
   </div>
 
   {{ range .Logs }}
-  <div id="{{ .Timestamp }}">
-    <div>{{ .Timestamp }}</div>
+  <div id="{{ .Time }}">
+    <div>{{ .Time }}</div>
     <div>{{ .Album }}</div>
     <div>
-      <a title='Delete' href='/logs/{{ .Timestamp }}/delete'><button>❌</button></a>
+      <a title='Delete' href='/logs/{{ .Time }}/delete'><button>❌</button></a>
     </div>
   </div>
   {{ end }}
