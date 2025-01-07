@@ -52,7 +52,7 @@ func (d *database) GetAlbum(ctx context.Context, id uint64) (*Album, error) {
 
 func (d *database) GetAlbumByTag(ctx context.Context, tag string) (*Album, error) {
 	var album *Album
-	return album, d.db.WithContext(ctx).Where("tag = ?", tag).Find(&album).Error
+	return album, d.db.WithContext(ctx).Where("tag = ?", tag).First(&album).Error
 }
 
 func (d *database) DeleteAlbum(ctx context.Context, id uint64) error {
