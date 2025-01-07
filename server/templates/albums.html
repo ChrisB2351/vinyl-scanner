@@ -19,9 +19,6 @@
     <div>{{ .Name }}</div>
     <div>{{ .Artist }}</div>
     <div>
-      {{ if $.Tag }}
-        <a title='Connect with tag' href='/tags/{{ $.Tag }}/connect/{{ .ID }}'><button>🏷️</button></a>
-      {{ end }}
       <a title='Edit' href='/albums/{{ .ID }}'><button>✏️</button></a>
       <a title='Delete' href='/albums/{{ .ID }}/delete'><button>❌</button></a>
     </div>

@@ -10,14 +10,6 @@ import (
 )
 
 func (s *server) getAlbums(w http.ResponseWriter, r *http.Request) {
-	var (
-		tag string
-	)
-
-	s.tagMu.Lock()
-	tag = s.tag
-	s.tagMu.Unlock()
-
 	albums, err := s.db.GetAlbums(r.Context())
 	if err != nil {
 		s.renderError(w, http.StatusInternalServerError, err)
@@ -27,14 +19,15 @@ func (s *server) getAlbums(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, http.StatusOK, "albums.html", map[string]interface{}{
 		"Title":  "Albums",
 		"Albums": albums,
-		"Tag":    tag,
 	})
 }
 
 func (s *server) getNewAlbum(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, http.StatusOK, "album.html", map[string]interface{}{
 		"Title": "New Album",
-		"Album": &Album{},
+		"Album": &Album{
+			Tag: r.URL.Query().Get("tag"),
+		},
 	})
 }
 
@@ -43,7 +36,7 @@ func (s *server) postNewAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getAlbum(w http.ResponseWriter, r *http.Request) {
-	id, err := extractAlbumID(r)
+	id, err := extractID(r)
 	if err != nil {
 		s.renderError(w, http.StatusBadRequest, err)
 		return
@@ -62,7 +55,7 @@ func (s *server) getAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) postAlbum(w http.ResponseWriter, r *http.Request) {
-	id, err := extractAlbumID(r)
+	id, err := extractID(r)
 	if err != nil {
 		s.renderError(w, http.StatusBadRequest, err)
 		return
@@ -86,15 +79,17 @@ func (s *server) createOrUpdateAlbum(w http.ResponseWriter, r *http.Request, id 
 
 	name := strings.TrimSpace(r.Form.Get("name"))
 	artist := strings.TrimSpace(r.Form.Get("artist"))
+	tag := strings.TrimSpace(r.Form.Get("tag"))
 
-	if name == "" || artist == "" {
-		s.renderError(w, http.StatusBadRequest, errors.New("name or artist n=missing"))
+	if name == "" || artist == "" || tag == "" {
+		s.renderError(w, http.StatusBadRequest, errors.New("name or artist or tag is missing"))
 		return
 	}
 
 	album := &Album{
 		Name:   name,
 		Artist: artist,
+		Tag:    tag,
 	}
 
 	if id == nil {
@@ -112,7 +107,7 @@ func (s *server) createOrUpdateAlbum(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (s *server) getDeleteAlbum(w http.ResponseWriter, r *http.Request) {
-	id, err := extractAlbumID(r)
+	id, err := extractID(r)
 	if err != nil {
 		s.renderError(w, http.StatusBadRequest, err)
 		return
@@ -131,7 +126,7 @@ func (s *server) getDeleteAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) postDeleteAlbum(w http.ResponseWriter, r *http.Request) {
-	id, err := extractAlbumID(r)
+	id, err := extractID(r)
 	if err != nil {
 		s.renderError(w, http.StatusBadRequest, err)
 		return
@@ -146,7 +141,7 @@ func (s *server) postDeleteAlbum(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/albums", http.StatusSeeOther)
 }
 
-func extractAlbumID(r *http.Request) (uint64, error) {
-	idStr := chi.URLParam(r, "album-id")
+func extractID(r *http.Request) (uint64, error) {
+	idStr := chi.URLParam(r, "id")
 	return strconv.ParseUint(idStr, 10, 64)
 }

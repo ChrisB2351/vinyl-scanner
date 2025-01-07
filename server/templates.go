@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"text/template"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -28,7 +30,7 @@ func (s *server) renderTemplate(w http.ResponseWriter, code int, template string
 }
 
 func (s *server) renderError(w http.ResponseWriter, code int, reqErr error) {
-	if errors.Is(reqErr, errNoItem) {
+	if errors.Is(reqErr, gorm.ErrRecordNotFound) {
 		code = http.StatusNotFound
 	}
 

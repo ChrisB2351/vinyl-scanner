@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
@@ -25,13 +27,12 @@ func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 		defer cancel()
 
-		tag, err := s.db.GetTag(ctx, tagID)
+		album, err := s.db.GetAlbumByTag(ctx, tagID)
 		if err != nil {
-			if errors.Is(err, errNoItem) {
-				s.tagMu.Lock()
-				s.tag = tagID
-				s.tagMu.Unlock()
-				s.sendToTelegram("Unknown tag scanned. Go to the web interface to connect it.")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				link := fmt.Sprintf("%s/albums/new?tag=%s", s.baseURL, tagID)
+				message := fmt.Sprintf("Unknown tag scanned: %s.\n\nCreate new album at %s.", tagID, link)
+				s.sendToTelegram(message)
 			} else {
 				slog.Error("could not load album", "error", err)
 				s.sendToTelegram(fmt.Sprintf("Could not load albums: %s", err))
@@ -40,8 +41,8 @@ func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.sendToTelegram("Scanned vinyl " + tag.Album.String())
-		err = s.db.CreateLog(ctx, tag.Album)
+		s.sendToTelegram("Scanned vinyl " + album.String())
+		err = s.db.CreateLog(ctx, album)
 		if err != nil {
 			slog.Error("could not log album", "error", err)
 			s.sendToTelegram(fmt.Sprintf("Could not log album: %s", err))

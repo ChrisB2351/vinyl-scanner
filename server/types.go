@@ -1,9 +1,17 @@
 package main
 
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
 type Album struct {
-	ID     uint64 `json:"id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Artist string `json:"artist,omitempty"`
+	gorm.Model
+	ID     uint64
+	Name   string
+	Artist string
+	Tag    string `gorm:"unique"`
 }
 
 func (a *Album) String() string {
@@ -15,11 +23,9 @@ func (a *Album) String() string {
 }
 
 type Log struct {
-	Timestamp string `json:"ts,omitempty"`
-	Album     *Album `json:"album,omitempty"`
-}
-
-type Tag struct {
-	ID    string
-	Album *Album
+	gorm.Model
+	ID      uint64
+	Time    time.Time
+	AlbumID uint64
+	Album   Album
 }

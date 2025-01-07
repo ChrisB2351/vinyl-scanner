@@ -55,6 +55,12 @@ func main() {
 			Required: true,
 		},
 		&cli.StringFlag{
+			Name:     "base-url",
+			Usage:    "hostname and path to where the dashboard will be available at",
+			EnvVars:  []string{"VINYL_BASE_URL"},
+			Required: true,
+		},
+		&cli.StringFlag{
 			Name:    "api-token",
 			Usage:   "api endpoint authentication token",
 			EnvVars: []string{"VINYL_API_TOKEN"},
@@ -81,6 +87,7 @@ func main() {
 			tgChatIDs: ctx.Int64Slice("telegram-chat-id"),
 			apiToken:  ctx.String("api-token"),
 			dataDir:   ctx.String("data-directory"),
+			baseURL:   ctx.String("base-url"),
 			jwtSecret: ctx.String("jwt-secret"),
 			username:  ctx.String("login-username"),
 			password:  ctx.String("login-password"),
