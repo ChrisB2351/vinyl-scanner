@@ -25,6 +25,7 @@ func (s *server) getAlbums(w http.ResponseWriter, r *http.Request) {
 func (s *server) getNewAlbum(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, http.StatusOK, "album.html", map[string]interface{}{
 		"Title": "New Album",
+		"Log":   r.URL.Query().Get("log") == "true",
 		"Album": &Album{
 			Tag: r.URL.Query().Get("tag"),
 		},
@@ -101,6 +102,14 @@ func (s *server) createOrUpdateAlbum(w http.ResponseWriter, r *http.Request, id 
 	if err != nil {
 		s.renderError(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	if id == nil && r.Form.Get("log") == "on" {
+		err = s.db.CreateLog(r.Context(), album)
+		if err != nil {
+			s.renderError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/albums#"+strconv.FormatUint(album.ID, 10), http.StatusSeeOther)

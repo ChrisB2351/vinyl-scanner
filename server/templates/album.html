@@ -8,6 +8,12 @@
   <input required type='text' name='artist' placeholder='Artist' value='{{ .Album.Artist }}'>
   <input required type='text' name='tag' placeholder='Tag' value='{{ .Album.Tag }}'>
 
+  {{ if not .Album.ID }}
+    <div>
+      <input type='checkbox' {{if .Log}}checked{{ end }} name='log' style='display: inline-block; width: auto;'> Immediately log album
+    </div>
+  {{ end }}
+
   <button>{{ if .Album.ID }}Update{{ else }}Create{{ end }}</button>
 </form>
 

@@ -30,7 +30,7 @@ func (s *server) postApiUpdate(w http.ResponseWriter, r *http.Request) {
 		album, err := s.db.GetAlbumByTag(ctx, tagID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				link := fmt.Sprintf("%s/albums/new?tag=%s", s.baseURL, tagID)
+				link := fmt.Sprintf("%s/albums/new?log=true&tag=%s", s.baseURL, tagID)
 				message := fmt.Sprintf("Unknown tag scanned: %s.\n\nCreate new album at %s.", tagID, link)
 				s.sendToTelegram(message)
 			} else {
