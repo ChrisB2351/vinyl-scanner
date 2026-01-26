@@ -1,7 +1,7 @@
 {{ template "_header.html" . }}
 {{ template "_navigation.html" "logs" }}
 
-<h2>{{ .Title }}</h2>
+<h2>{{ .Title }} <small>({{ len .Logs }} entries)</small></h2>
 
 <div class='table'>
   <div>

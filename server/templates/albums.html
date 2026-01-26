@@ -1,7 +1,7 @@
 {{ template "_header.html" . }}
 {{ template "_navigation.html" "albums" }}
 
-<h2>{{ .Title }}</h2>
+<h2>{{ .Title }} <small>({{ len .Albums }} entries)</small></h2>
 
 <a href='/albums/new'>
   <button>New Album</button>
