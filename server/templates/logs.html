@@ -13,7 +13,7 @@
   {{ range .Logs }}
   <div id="{{ .Time }}">
     <div>{{ .Time.Format "2006-01-02 15:04" }}</div>
-    <div>{{ .Album }}</div>
+    <div><em>{{ .Album.Name }}</em> by {{ .Album.Artist }}</div>
     <div>
       <a title='Delete' href='/logs/{{ .ID }}/delete'><button>❌</button></a>
     </div>
