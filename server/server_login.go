@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/jwtauth/v5"
-	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -113,6 +113,13 @@ func (s *server) mustLoggedIn(next http.Handler) http.Handler {
 
 func (s *server) isLoggedIn(r *http.Request) bool {
 	token, _, err := jwtauth.FromContext(r.Context())
-	valid := !(err != nil || token == nil || jwt.Validate(token) != nil || token.Subject() != sessionSubject)
-	return valid
+	if err != nil || token == nil {
+		return false
+	}
+
+	if subject, _ := token.Subject(); subject != sessionSubject {
+		return false
+	}
+
+	return true
 }

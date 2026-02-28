@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine3.22 as build
+FROM golang:1.26-alpine3.23 as build
 
 WORKDIR /app/
 
@@ -14,7 +14,7 @@ RUN go mod download
 COPY . /app/
 RUN go build -o vinyl-scanner .
 
-FROM alpine:3.22
+FROM alpine:3.23
 
 COPY --from=build /app/vinyl-scanner /bin/vinyl-scanner
 

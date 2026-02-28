@@ -8,10 +8,11 @@ import (
 
 type Album struct {
 	gorm.Model
-	ID     uint64
-	Name   string
-	Artist string
-	Tag    string `gorm:"unique"`
+	ID            uint64
+	Name          string
+	Artist        string
+	MusicBrainzID string `gorm:"unique"`
+	Tag           string `gorm:"unique"`
 }
 
 func (a *Album) String() string {
