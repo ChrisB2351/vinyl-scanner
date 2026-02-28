@@ -1,0 +1,24 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "logs" }}
+
+<h2>{{ .Title }} <small>({{ len .Logs }} entries)</small></h2>
+
+<div class='table'>
+  <div>
+    <div>Timestamp</div>
+    <div>Album</div>
+    <div></div>
+  </div>
+
+  {{ range .Logs }}
+  <div id="{{ .Time }}">
+    <div>{{ .Time }}</div>
+    <div>{{ .Album }}</div>
+    <div>
+      <a title='Delete' href='/logs/{{ .ID }}/delete'><button>❌</button></a>
+    </div>
+  </div>
+  {{ end }}
+</div>
+
+{{ template "_footer.html" . }}

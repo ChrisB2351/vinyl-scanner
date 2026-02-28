@@ -1,0 +1,12 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "albums" }}
+
+<h2>{{ .Title }}</h2>
+
+<p>Do you want to delete the album <strong>{{ .Album.String }}</strong>?</p>
+
+<form method='post'>
+  <button>Delete Album</button>
+</form>
+
+{{ template "_footer.html" . }}

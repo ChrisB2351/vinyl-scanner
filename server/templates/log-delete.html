@@ -1,0 +1,12 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "logs" }}
+
+<h2>{{ .Title }}</h2>
+
+<p>Are you sure you want to delete the {{ .Log.Time }} log for album {{ .Log.Album.String }}?</p>
+
+<form method='post'>
+  <button>Delete Log</button>
+</form>
+
+{{ template "_footer.html" . }}

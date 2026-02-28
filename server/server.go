@@ -1,200 +1,137 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
-	"time"
+	"strconv"
 
-	tele "gopkg.in/telebot.v3"
-	"gopkg.in/telebot.v3/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
 )
 
-type Albums map[string]Album
+type config struct {
+	tgToken   string
+	tgChatIDs []int64
 
-type Album struct {
-	Name   string   `json:"name,omitempty"`
-	Artist string   `json:"artist,omitempty"`
-	OldIDs []string `json:"old_ids,omitempty"`
-}
+	apiToken string
+	dataDir  string
+	baseURL  string
 
-func (a *Album) String() string {
-	str := `"` + a.Name + `"`
-	if a.Artist != "" {
-		str += ` by ` + a.Artist
-	}
-	return str
+	jwtSecret string
+	username  string
+	password  string
 }
 
 type server struct {
-	bot      *tele.Bot
-	chatIDs  []int64
-	dataDir  string
-	logMu    sync.Mutex
-	albumsMu sync.Mutex
-	lastMu   sync.Mutex
-	lastID   string
+	mux     *chi.Mux
+	db      *database
+	baseURL string
+
+	tgToken   string
+	tgChatIDs []string
+
+	jwtAuth  *jwtauth.JWTAuth
+	username string
+	password string
 }
 
-func newServer(tgToken string, tgChatIDs []int64, dataDir string) (*server, error) {
-	err := os.MkdirAll(dataDir, 0666)
+func newServer(cfg *config) (*server, error) {
+	err := os.MkdirAll(cfg.dataDir, 0777)
 	if err != nil {
 		return nil, err
 	}
 
-	pref := tele.Settings{
-		Token:  tgToken,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-	}
-
-	bot, err := tele.NewBot(pref)
+	db, err := newDatabase(filepath.Join(cfg.dataDir, "data.sqlite3"))
 	if err != nil {
 		return nil, err
+	}
+
+	pwd, err := base64.StdEncoding.DecodeString(cfg.password)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding base64 bcrypt hashed password: %w", err)
 	}
 
 	s := &server{
-		chatIDs: tgChatIDs,
-		bot:     bot,
-		dataDir: dataDir,
+		mux:      chi.NewRouter(),
+		db:       db,
+		baseURL:  cfg.baseURL,
+		tgToken:  cfg.tgToken,
+		jwtAuth:  jwtauth.New("HS256", []byte(base64.StdEncoding.EncodeToString([]byte(cfg.jwtSecret))), nil),
+		username: cfg.username,
+		password: string(pwd),
+	}
+	for _, chatID := range cfg.tgChatIDs {
+		s.tgChatIDs = append(s.tgChatIDs, strconv.FormatInt(chatID, 10))
 	}
 
-	bot.Use(middleware.Whitelist(tgChatIDs...))
-	bot.Handle("/set_name", s.handleSetName)
-	bot.Handle("/set_artist", s.handleSetArtist)
-	bot.Handle("/update_id", s.handleUpdateID)
-	bot.Handle("/albums", s.handleAlbums)
-	bot.Handle("/clear", s.handleClear)
+	// Build Router
+	s.mux.Use(jwtauth.Verifier(s.jwtAuth))
+	s.mux.Get("/assets*", http.FileServer(http.FS(assetsFS)).ServeHTTP)
+	s.mux.Get("/login", s.loginGet)
+	s.mux.Post("/login", s.loginPost)
+	s.mux.Get("/logout", s.logoutGet)
+	s.mux.Group(func(r chi.Router) {
+		r.Use(s.mustLoggedIn)
+		r.Get("/", s.getIndex)
+		r.Get("/albums", s.getAlbums)
+		r.Get("/albums/new", s.getNewAlbum)
+		r.Post("/albums/new", s.postNewAlbum)
+		r.Get("/albums/{id}", s.getAlbum)
+		r.Post("/albums/{id}", s.postAlbum)
+		r.Get("/albums/{id}/delete", s.getDeleteAlbum)
+		r.Post("/albums/{id}/delete", s.postDeleteAlbum)
+
+		r.Get("/logs", s.getLogs)
+		r.Get("/logs/{id}/delete", s.getDeleteLog)
+		r.Post("/logs/{id}/delete", s.postDeleteLog)
+	})
+	s.mux.Group(func(r chi.Router) {
+		if cfg.apiToken == "" {
+			slog.Warn("authorization token not set, api endpoint is unprotected")
+		} else {
+			r.Use(mustApiToken(cfg.apiToken))
+		}
+		r.Post("/api/tag", s.postApiUpdate)
+	})
+
 	return s, nil
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	id := string(body)
-	slog.Info("received new id", "id", id)
-	w.WriteHeader(http.StatusOK)
-
-	go s.handleID(id)
+	s.mux.ServeHTTP(w, r)
 }
 
-func (s *server) sendMessage(msg string) {
-	for _, id := range s.chatIDs {
-		_, err := s.bot.Send(&tele.Chat{ID: id}, msg)
+func (s *server) getIndex(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/albums", http.StatusTemporaryRedirect)
+}
+
+func (s *server) sendToTelegram(msg string) {
+	for _, chatID := range s.tgChatIDs {
+		data := url.Values{}
+		data.Set("chat_id", chatID)
+		data.Set("disable_web_page_preview", "true")
+		data.Set("text", msg)
+
+		u, err := url.Parse(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", s.tgToken))
 		if err != nil {
-			slog.Warn("error while sending to telegram", "error", err)
+			slog.Warn("failed to send make telegram url", "error", err)
+			return
+		}
+		u.RawQuery = data.Encode()
+
+		resp, err := http.DefaultClient.Get(u.String())
+		if err != nil {
+			slog.Warn("failed to send request to telegram", "error", err)
+			return
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			slog.Warn("unexpected status code from telegram", "statusCode", resp.StatusCode)
 		}
 	}
-}
-
-func (s *server) handleID(id string) {
-	if s.isLastID(id) {
-		return
-	}
-
-	albums, err := s.loadAlbums()
-	if err != nil {
-		s.sendMessage(fmt.Sprintf("could not load albums: %s", err))
-		return
-	}
-
-	album, ok := albums[id]
-	if ok {
-		s.sendMessage("Scanned vinyl " + album.String())
-		go s.logID(id)
-		return
-	}
-
-	s.sendMessage("Unknown tag scanned. Please associate the given tag with a name using the following command:")
-	s.sendMessage("/set_name " + id + " <name>")
-}
-
-func (s *server) isLastID(id string) bool {
-	s.lastMu.Lock()
-	defer s.lastMu.Unlock()
-
-	if s.lastID == id {
-		return true
-	}
-
-	s.lastID = id
-	return false
-}
-
-func (s *server) logID(id string) {
-	entry := fmt.Sprintf("%s,%s\n", id, time.Now().UTC().Format(time.RFC3339))
-
-	s.logMu.Lock()
-	defer s.logMu.Unlock()
-
-	fd, err := os.OpenFile(filepath.Join(s.dataDir, "listens.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		slog.Warn("error while opening listens.log", "error", err)
-		return
-	}
-
-	_, err = fd.Write([]byte(entry))
-	if err != nil {
-		slog.Warn("error while writing to listens.log", "error", err)
-		return
-	}
-}
-
-func (s *server) loadAlbums() (Albums, error) {
-	s.albumsMu.Lock()
-	defer s.albumsMu.Unlock()
-
-	return s.unsafeLoadAlbums()
-}
-
-// unsafeLoadAlbums loads the [Albums] without using a lock.
-func (s *server) unsafeLoadAlbums() (Albums, error) {
-	raw, err := os.ReadFile(s.getAlbumsFilepath())
-	if os.IsNotExist(err) {
-		return Albums{}, nil
-	} else if err != nil {
-		return nil, err
-	}
-
-	var albums Albums
-	err = json.Unmarshal(raw, &albums)
-	if err != nil {
-		return nil, err
-	}
-
-	return albums, nil
-}
-
-func (s *server) updateAlbums(fn func(albums Albums) (Albums, error)) error {
-	s.albumsMu.Lock()
-	defer s.albumsMu.Unlock()
-
-	albums, err := s.unsafeLoadAlbums()
-	if err != nil {
-		return err
-	}
-
-	albums, err = fn(albums)
-	if err != nil {
-		return err
-	}
-
-	raw, err := json.Marshal(albums)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(s.getAlbumsFilepath(), raw, 0666)
-}
-
-func (s *server) getAlbumsFilepath() string {
-	return filepath.Join(s.dataDir, "albums.json")
 }

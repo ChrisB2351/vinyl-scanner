@@ -1,0 +1,29 @@
+{{ template "_header.html" . }}
+{{ template "_navigation.html" "albums" }}
+
+<h2>{{ .Title }} <small>({{ len .Albums }} entries)</small></h2>
+
+<a href='/albums/new'>
+  <button>New Album</button>
+</a>
+
+<div class='table'>
+  <div>
+    <div>Name</div>
+    <div>Artist</div>
+    <div></div>
+  </div>
+
+  {{ range .Albums }}
+  <div id="{{ .ID }}">
+    <div>{{ .Name }}</div>
+    <div>{{ .Artist }}</div>
+    <div>
+      <a title='Edit' href='/albums/{{ .ID }}'><button>✏️</button></a>
+      <a title='Delete' href='/albums/{{ .ID }}/delete'><button>❌</button></a>
+    </div>
+  </div>
+  {{ end }}
+</div>
+
+{{ template "_footer.html" . }}

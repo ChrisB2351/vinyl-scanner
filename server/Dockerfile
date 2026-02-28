@@ -1,6 +1,11 @@
-FROM golang:1.22-alpine3.19 as build
+FROM golang:1.25-alpine3.22 as build
 
 WORKDIR /app/
+
+RUN apk update && \
+  apk add build-base
+
+ENV CGO_ENABLED=1
 
 COPY ./go.mod ./
 COPY ./go.sum ./
@@ -9,11 +14,11 @@ RUN go mod download
 COPY . /app/
 RUN go build -o vinyl-scanner .
 
-FROM alpine:3.19
+FROM alpine:3.22
 
 COPY --from=build /app/vinyl-scanner /bin/vinyl-scanner
 
-ENV UID 501
+ENV UID=501
 
 RUN apk update && \
   apk add --no-cache ca-certificates tzdata && \
@@ -26,7 +31,7 @@ USER user
 WORKDIR /data
 VOLUME /data
 
-ENV VINYL_DATA_DIR "/data"
+ENV VINYL_DATA_DIR="/data"
 
 EXPOSE 8080
 
