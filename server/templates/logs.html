@@ -3,7 +3,7 @@
 
 <h2>{{ .Title }} <small>({{ .Total }} entries)</small></h2>
 
-<div class='table'>
+<div class='table' style='grid-template-columns: max-content 1fr max-content'>
   <div>
     <div><a href="{{ .SortTimeURL }}">Timestamp {{ if eq .Order "asc" }}▲{{ else }}▼{{ end }}</a></div>
     <div>Album</div>
