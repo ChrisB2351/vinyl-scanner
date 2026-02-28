@@ -127,7 +127,9 @@ func main() {
 
 		slog.Info("Server shutting down...")
 
-		go server.Close()
+		go func() {
+			_ = server.Close()
+		}()
 
 		wg.Wait()
 		return nil
