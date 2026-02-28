@@ -110,6 +110,44 @@ func (s *server) getIndex(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/albums", http.StatusTemporaryRedirect)
 }
 
+type pagination struct {
+	Page       int
+	TotalPages int
+	PrevURL    string
+	NextURL    string
+}
+
+func parseOrder(r *http.Request, defaultOrder string) string {
+	order := r.URL.Query().Get("order")
+	if order != "asc" && order != "desc" {
+		return defaultOrder
+	}
+	return order
+}
+
+func newPagination(r *http.Request, total int64, pageURL func(int) string) pagination {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	totalPages := max(int((total+pageSize-1)/pageSize), 1)
+	if page > totalPages {
+		page = totalPages
+	}
+
+	p := pagination{Page: page, TotalPages: totalPages}
+	if page > 1 {
+		p.PrevURL = pageURL(page - 1)
+	}
+
+	if page < totalPages {
+		p.NextURL = pageURL(page + 1)
+	}
+
+	return p
+}
+
 func (s *server) sendToTelegram(msg string) {
 	for _, chatID := range s.tgChatIDs {
 		data := url.Values{}

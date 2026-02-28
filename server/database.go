@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type database struct {
@@ -40,9 +41,17 @@ func (d *database) UpdateAlbum(ctx context.Context, album *Album) error {
 	return d.db.WithContext(ctx).Save(album).Error
 }
 
-func (d *database) GetAlbums(ctx context.Context) ([]*Album, error) {
+func (d *database) CountAlbums(ctx context.Context) (int64, error) {
+	var count int64
+	return count, d.db.WithContext(ctx).Model(&Album{}).Count(&count).Error
+}
+
+func (d *database) GetAlbums(ctx context.Context, sort, order string, offset, limit int) ([]*Album, error) {
 	var albums []*Album
-	return albums, d.db.WithContext(ctx).Find(&albums).Error
+	return albums, d.db.WithContext(ctx).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: sort}, Desc: order == "desc"}).
+		Offset(offset).Limit(limit).
+		Find(&albums).Error
 }
 
 func (d *database) GetAlbum(ctx context.Context, id uint64) (*Album, error) {
@@ -70,9 +79,17 @@ func (d *database) DeleteLog(ctx context.Context, id uint64) error {
 	return d.db.WithContext(ctx).Delete(&Log{}, id).Error
 }
 
-func (d *database) GetLogs(ctx context.Context) ([]*Log, error) {
+func (d *database) CountLogs(ctx context.Context) (int64, error) {
+	var count int64
+	return count, d.db.WithContext(ctx).Model(&Log{}).Count(&count).Error
+}
+
+func (d *database) GetLogs(ctx context.Context, order string, offset, limit int) ([]*Log, error) {
 	var logs []*Log
-	return logs, d.db.WithContext(ctx).Preload("Album").Find(&logs).Error
+	return logs, d.db.WithContext(ctx).Preload("Album").
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "time"}, Desc: order == "desc"}).
+		Offset(offset).Limit(limit).
+		Find(&logs).Error
 }
 
 func (d *database) GetLog(ctx context.Context, id uint64) (*Log, error) {

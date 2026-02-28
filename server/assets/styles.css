@@ -137,3 +137,15 @@ button:hover {
   margin: 0;
   background: white;
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.pagination button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

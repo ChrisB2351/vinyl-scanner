@@ -1,7 +1,7 @@
 {{ template "_header.html" . }}
 {{ template "_navigation.html" "albums" }}
 
-<h2>{{ .Title }} <small>({{ len .Albums }} entries)</small></h2>
+<h2>{{ .Title }} <small>({{ .Total }} entries)</small></h2>
 
 <a href='/albums/new'>
   <button>New Album</button>
@@ -9,8 +9,8 @@
 
 <div class='table'>
   <div>
-    <div>Name</div>
-    <div>Artist</div>
+    <div><a href="{{ .SortNameURL }}">Name{{ if eq .Sort "name" }} {{ if eq .Order "asc" }}▲{{ else }}▼{{ end }}{{ end }}</a></div>
+    <div><a href="{{ .SortArtistURL }}">Artist{{ if eq .Sort "artist" }} {{ if eq .Order "asc" }}▲{{ else }}▼{{ end }}{{ end }}</a></div>
     <div></div>
   </div>
 
@@ -24,6 +24,12 @@
     </div>
   </div>
   {{ end }}
+</div>
+
+<div class='pagination'>
+  {{ if .Pagination.PrevURL }}<a href="{{ .Pagination.PrevURL }}"><button>← Prev</button></a>{{ else }}<button disabled>← Prev</button>{{ end }}
+  <span>Page {{ .Pagination.Page }} of {{ .Pagination.TotalPages }}</span>
+  {{ if .Pagination.NextURL }}<a href="{{ .Pagination.NextURL }}"><button>Next →</button></a>{{ else }}<button disabled>Next →</button>{{ end }}
 </div>
 
 {{ template "_footer.html" . }}
